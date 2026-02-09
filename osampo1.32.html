@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Osampo Game - 全文ルール反映版</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif; background-color: #f0f2f5; display: flex; flex-direction: column; align-items: center; padding: 20px; color: #333; }
+        
+        /* ゲームメインエリア（オーバーレイはこの中だけに表示） */
+        #game-board { 
+            position: relative; 
+            background: white; 
+            padding: 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1); 
+            width: 95%; 
+            max-width: 1000px; 
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        
+        /* 優勝時オーバーレイ */
+        #replay-overlay { 
+            display: none; 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            background: rgba(255,255,255,0.9); 
+            z-index: 100; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            backdrop-filter: blur(3px);
+        }
+
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .phase-info { font-size: 1.5rem; font-weight: bold; color: #007bff; }
+        .turn-info { font-size: 1.1rem; padding: 5px 15px; border-radius: 5px; background: #eee; transition: all 0.3s; }
+        .my-turn { background: #ffeb3b !important; border: 2px solid #fbc02d; font-weight: bold; transform: scale(1.05); }
+
+        .battlefield { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+        .player-area { border: 2px solid #ddd; border-radius: 8px; padding: 10px; min-height: 140px; background: #fafafa; text-align: center; }
+        .player-area.active { border-color: #007bff; background: #e3f2fd; }
+        .player-name { font-weight: bold; margin-bottom: 5px; font-size: 0.85rem; border-bottom: 1px solid #eee; }
+        .hand-count { font-size: 0.75rem; color: #666; margin-bottom: 8px; }
+        .field-cards { display: flex; justify-content: center; gap: 4px; flex-wrap: wrap; height: 65px; align-items: center; }
+
+        .card { width: 40px; height: 60px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; color: white; box-shadow: 1px 1px 3px rgba(0,0,0,0.2); text-shadow: 1px 1px 1px rgba(0,0,0,0.5); cursor: pointer; }
+        .card.Yellow { background-color: #f1c40f; color: #333; }
+        .card.Blue { background-color: #3498db; }
+        .card.Red { background-color: #e74c3c; }
+        .card.Mix { background: linear-gradient(45deg, #f1c40f, #3498db, #e74c3c); }
+
+        .hand-section { background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 15px; }
+        #player-hand { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; min-height: 65px; }
+        #log { height: 120px; overflow-y: auto; background: #333; color: #00ff00; padding: 10px; font-family: monospace; font-size: 0.85rem; border-radius: 5px; margin-bottom: 15px; }
+        .controls { margin-top: 15px; display: flex; gap: 10px; }
+        button { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-pass { background: #6c757d; color: white; }
+        .btn-special { background: #6f42c1; color: white; }
+
+        /* ルール解説セクション（外側なのでオーバーレイの影響を受けない） */
+        .rule-wrapper { width: 95%; max-width: 1000px; }
+        .rule-section { background: #fff; border-top: 2px solid #ddd; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); font-size: 0.95rem; line-height: 1.7; }
+        .rule-section h3 { margin-top: 0; color: #333; border-bottom: 3px solid #007bff; display: inline-block; padding-bottom: 5px; margin-bottom: 20px; font-size: 1.3rem;}
+        .rule-block { margin-bottom: 25px; }
+        .rule-block h4 { margin: 15px 0 8px 0; color: #007bff; font-size: 1.1rem; border-left: 4px solid #007bff; padding-left: 10px; }
+        .rule-content { white-space: pre-wrap; color: #444; padding-left: 5px; }
+        
+        #winner-msg { font-size: 2.5rem; color: #2c3e50; margin-bottom: 20px; }
+        .replay-btn { background: #28a745; color: white; font-size: 1.5rem; padding: 15px 40px; border: none; border-radius: 50px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="game-board">
+    <div id="replay-overlay">
+        <h2 id="winner-msg">Victory!</h2>
+        <button class="replay-btn" onclick="location.reload()">もう一度対戦する</button>
+    </div>
+
+    <div class="header">
+        <div class="phase-info">フェイズ: <span id="phase-text">朝</span></div>
+        <div class="turn-info" id="turn-display">準備中...</div>
+    </div>
+
+    <div id="log"></div>
+
+    <div class="battlefield">
+        <div class="player-area" id="area-0"><div class="player-name">Player 1 (あなた)</div><div class="hand-count" id="count-0">--</div><div class="field-cards" id="field-0"></div></div>
+        <div class="player-area" id="area-1"><div class="player-name">Player 2</div><div class="hand-count" id="count-1">--</div><div class="field-cards" id="field-1"></div></div>
+        <div class="player-area" id="area-2"><div class="player-name">Player 3</div><div class="hand-count" id="count-2">--</div><div class="field-cards" id="field-2"></div></div>
+        <div class="player-area" id="area-3"><div class="player-name">Player 4</div><div class="hand-count" id="count-3">--</div><div class="field-cards" id="field-3"></div></div>
+    </div>
+
+    <div class="hand-section">
+        <strong>あなたの手札:</strong>
+        <div id="player-hand"></div>
+        <div class="controls">
+            <button class="btn-pass" id="pass-btn" onclick="game.handlePass()">パス</button>
+            <button class="btn-special" id="spec-btn" onclick="game.handleSpecial()">今日からウチの子</button>
+        </div>
+    </div>
+</div>
+
+<div class="rule-wrapper">
+    <div class="rule-section">
+        <h3>お散歩ゲームのルール</h3>
+
+        <div class="rule-block">
+            <h4>1. カード構成（全60枚）</h4>
+            <div class="rule-content">黄色：24枚 / 青色：24枚 / 赤色：12枚</div>
+        </div>
+
+        <div class="rule-block">
+            <h4>2. フェイズについて</h4>
+            <div class="rule-content">場がリセットされるたびに、フェイズは <strong>必ず「朝」から再開</strong> します。
+朝1枚/昼2枚/夜3枚</div>
+        </div>
+
+        <div class="rule-block">
+            <h4>3. 手番でできる行動</h4>
+            <div class="rule-content">自分の手番では以下のどちらかを行います。
+・カードを出す
+・パスする</div>
+        </div>
+
+        <div class="rule-block">
+            <h4>4. カードの出し方</h4>
+            <div class="rule-content"><strong>① のんびりお散歩</strong>
+現在のフェイズで <strong>まだ場に出ていない色</strong> を、そのフェイズの <strong>規定枚数</strong> 出します。
+
+<strong>② どんどんお散歩（フェイズ進行）</strong>
+直前のプレイヤーと <strong>同じ色</strong> を、1枚多く 出します。
+<strong>● フェイズの移行</strong>
+どんどんお散歩を行った瞬間、フェイズが1段階進みます。
+朝 → 昼　昼 → 夜
+<strong>● 制限</strong>
+夜フェイズ（3枚が上限）では、
+どんどんお散歩を行うことはできません。
+
+<strong>③ 今日からウチの子（夜フェイズ限定）</strong>
+赤・青・黄を各1枚（計3枚） 出します。
+直前の場の状態を無視して、いつでも実行できます。
+出した瞬間、場がリセットされます。
+リセット後は、このアクションを行ったプレイヤーが
+<strong>次の親（朝フェイズの開始プレイヤー）</strong> となります。</div>
+        </div>
+
+        <div class="rule-block">
+            <h4>5. フェイズの進行と場のリセット</h4>
+            <div class="rule-content"><strong>◆ フェイズが進む条件</strong>
+以下のいずれかが起こった時、フェイズが1段階進みます。
+・そのフェイズで <strong>3色すべてが出揃った</strong>
+・誰かが <strong>どんどんお散歩</strong> を行った
+
+<strong>◆ 場がリセットされる条件</strong>
+以下のいずれが発生した場合、場がリセットされます。
+・最後にカードを出したプレイヤー以外の <strong>全員がパスした</strong>
+・今日からウチの子 が行われた
+
+<strong>● リセット後の処理</strong>
+フェイズは <strong>朝</strong> に戻ります。
+最後にカードを出したプレイヤーが 親 となり、
+任意のカードを1回出してゲームを再開します。</div>
+        </div>
+
+        <div class="rule-block">
+            <h4>6. 勝利条件</h4>
+            <div class="rule-content">自分の手札を <strong>最も早く0枚にしたプレイヤー</strong> が勝利します。</div>
+        </div>
+    </div>
+</div>
+
+<script>
+const COLORS = ["Yellow", "Blue", "Red"];
+const AI_SPEED = 1300; // ここを書き換えるだけで一括調整
+const INITIAL_DECK = [...Array(24).fill("Yellow"), ...Array(24).fill("Blue"), ...Array(12).fill("Red")];
+
+class OsampoGame {
+    constructor() {
+        this.players = [
+            {name: "Player 1", hand: [], isAI: false},
+            {name: "Player 2", hand: [], isAI: true},
+            {name: "Player 3", hand: [], isAI: true},
+            {name: "Player 4", hand: [], isAI: true}
+        ];
+        this.deck = [...INITIAL_DECK];
+        this.phase = 1;
+        this.fieldColors = new Set();
+        this.lastPlay = { color: null, count: 0, playerIdx: -1 };
+        this.turnIdx = Math.floor(Math.random() * 4);
+        this.passCount = 0;
+        this.isGameOver = false;
+        this.setup();
+    }
+
+    setup() {
+        this.deck.sort(() => Math.random() - 0.5);
+        for (let i = 0; i < 60; i++) this.players[i % 4].hand.push(this.deck[i]);
+        this.log(`ゲーム開始！最初の親は ${this.players[this.turnIdx].name} です。`);
+        this.updateUI();
+        if (this.players[this.turnIdx].isAI) setTimeout(() => this.aiTurn(), 1200);
+    }
+
+    log(msg) {
+        const logDiv = document.getElementById('log');
+        logDiv.innerHTML += `<div>> ${msg}</div>`;
+        logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    updateUI() {
+        document.getElementById('phase-text').innerText = ["", "朝", "昼", "夜"][this.phase];
+        const turnDisplay = document.getElementById('turn-display');
+        turnDisplay.innerText = `${this.players[this.turnIdx].name} の番`;
+        
+        if (this.turnIdx === 0) turnDisplay.classList.add('my-turn');
+        else turnDisplay.classList.remove('my-turn');
+
+        for (let i = 0; i < 4; i++) {
+            document.getElementById(`area-${i}`).classList.toggle('active', this.turnIdx === i);
+            document.getElementById(`count-${i}`).innerText = `手札: ${this.players[i].hand.length}枚`;
+        }
+
+        const handDiv = document.getElementById('player-hand');
+        handDiv.innerHTML = '';
+        const counts = COLORS.reduce((acc, c) => { acc[c] = this.players[0].hand.filter(x => x === c).length; return acc; }, {});
+        COLORS.forEach(color => {
+            if (counts[color] > 0) {
+                const card = document.createElement('div');
+                card.className = `card ${color}`;
+                card.innerText = `${{Yellow:'黄', Blue:'青', Red:'赤'}[color]}\n${counts[color]}`;
+                card.onclick = () => this.handleCardClick(color, counts[color]);
+                handDiv.appendChild(card);
+            }
+        });
+
+        document.getElementById('spec-btn').disabled = !(this.turnIdx === 0 && this.phase === 3 && COLORS.every(c => counts[c] >= 1));
+        document.getElementById('pass-btn').disabled = (this.turnIdx !== 0 || this.isGameOver);
+    }
+
+    async playMove(color, count, moveType) {
+        if (this.isGameOver) return;
+        const p = this.players[this.turnIdx];
+        this.log(`${p.name}: [${moveType}] ${color==='Mix'?'3色':color} x${count}`);
+
+        const field = document.getElementById(`field-${this.turnIdx}`);
+        field.innerHTML = '';
+        for(let i=0; i<count; i++) {
+            const c = document.createElement('div');
+            c.className = `card ${color}`;
+            field.appendChild(c);
+        }
+
+        if (moveType === "今日からウチの子") {
+            COLORS.forEach(c => p.hand.splice(p.hand.indexOf(c), 1));
+    
+            // 勝利判定を追加
+            if (p.hand.length === 0) {
+                this.endGame(p.name);
+                return;
+            }
+    
+            setTimeout(() => this.resetField(this.turnIdx), 1000);
+            return;
+        }
+
+        for (let i = 0; i < count; i++) p.hand.splice(p.hand.indexOf(color), 1);
+
+        if (moveType === "どんどんお散歩") {
+            this.phase = Math.min(this.phase + 1, 3);
+            this.fieldColors = new Set([color]);
+            this.log(`フェイズ進行！ -> 【${["","朝","昼","夜"][this.phase]}】`);
+            this.clearOtherFields(this.turnIdx);
+        } else {
+            this.fieldColors.add(color);
+        }
+
+        this.lastPlay = { color, count, playerIdx: this.turnIdx };
+        this.passCount = 0;
+
+        if (p.hand.length === 0) {
+            this.endGame(p.name);
+            return;
+        }
+
+	// --- 3色揃った場合の処理 ---
+        if (this.fieldColors.size === 3) {
+            let oldPhase = this.phase;
+            this.phase = Math.min(this.phase + 1, 3);
+            
+            if (oldPhase < 3) {
+                // 朝・昼から進む時だけリセット
+                this.fieldColors.clear();
+                this.lastPlay = { color: null, count: 0, playerIdx: this.turnIdx };
+                this.log(`📢 3色そろった！ -> 【${["","朝","昼","夜"][this.phase]}】`);
+            } else {
+                // 夜で3色揃った場合はリセットしない（のんびりお散歩不可にする）
+                this.lastPlay = { color: "Locked", count: 3, playerIdx: this.turnIdx }; // colorを特殊な値に
+                this.log(`📢 3色そろった！「今日からウチの子」か「パス」のみ可能です。`);
+            }
+            setTimeout(() => this.clearAllFields(), 800);
+            if (oldPhase === 3) {
+                setTimeout(() => this.nextTurn(), 800);
+                return; // ここで下の nextTurn() を実行させない
+            }
+        }
+        this.nextTurn();
+    }
+
+    handlePass() {
+        if (this.isGameOver) return;
+        this.log(`${this.players[this.turnIdx].name} はパス`);
+        document.getElementById(`field-${this.turnIdx}`).innerHTML = '<small style="color:gray">PASS</small>';
+        this.passCount++;
+        if (this.passCount >= 3) {
+            let nextParent = (this.lastPlay.playerIdx === -1)
+                ? (this.turnIdx + 1) % 4
+                : this.lastPlay.playerIdx;
+
+            setTimeout(() => this.resetField(nextParent), 800);
+        } else {
+            this.nextTurn();
+        }
+    }
+
+    resetField(winnerIdx) {
+        if (this.isGameOver) return;
+        this.log("--- 場のリセット (朝に戻ります) ---");
+        this.phase = 1;
+        this.fieldColors.clear();
+        this.lastPlay = { color: null, count: 0, playerIdx: -1 };
+        this.passCount = 0;
+        this.turnIdx = winnerIdx;
+        this.clearAllFields();
+        this.updateUI();
+        if (this.players[this.turnIdx].isAI) setTimeout(() => this.aiTurn(), AI_SPEED);
+    }
+
+    endGame(winnerName) {
+        this.isGameOver = true;
+        this.updateUI();
+        const overlay = document.getElementById('replay-overlay');
+        const msg = document.getElementById('winner-msg');
+        overlay.style.display = 'flex';
+        msg.innerText = `🏆 優勝: ${winnerName}！`;
+    }
+
+    clearAllFields() {
+        for(let i=0; i<4; i++) document.getElementById(`field-${i}`).innerHTML = '';
+    }
+
+    clearOtherFields(idx) {
+        for(let i=0; i<4; i++) if(i !== idx) document.getElementById(`field-${i}`).innerHTML = '';
+    }
+
+    nextTurn() {
+        if (this.isGameOver) return;
+        this.turnIdx = (this.turnIdx + 1) % 4;
+        this.updateUI();
+        if (this.players[this.turnIdx].isAI) {
+            setTimeout(() => this.aiTurn(), AI_SPEED);
+        }
+    }
+
+    aiTurn() {
+        if (this.isGameOver) return;
+        const p = this.players[this.turnIdx];
+        const counts = COLORS.reduce((acc, c) => { acc[c] = p.hand.filter(x => x === c).length; return acc; }, {});
+
+        if (this.phase === 3 && COLORS.every(c => counts[c] >= 1)) {
+            this.playMove("Mix", 3, "今日からウチの子");
+            return;
+        }
+        if (this.phase < 3 && this.lastPlay.color) {
+            const needed = this.lastPlay.count + 1;
+            if (counts[this.lastPlay.color] >= needed) {
+                this.playMove(this.lastPlay.color, needed, "どんどんお散歩");
+                return;
+            }
+        }
+        for (const c of COLORS) {
+            if (!this.fieldColors.has(c) && counts[c] >= this.phase) {
+                this.playMove(c, this.phase, "のんびりお散歩");
+                return;
+            }
+        }
+        this.handlePass();
+    }
+
+     handleCardClick(color, count) {
+         if (this.turnIdx !== 0 || this.isGameOver) return;
+        
+         // 夜フェイズで3色揃っている（Locked）時は、通常クリックを無効化
+         if (this.phase === 3 && this.lastPlay.color === "Locked") return;
+
+         if (this.phase < 3 && color === this.lastPlay.color && count >= this.lastPlay.count + 1) {
+            this.playMove(color, this.lastPlay.count + 1, "どんどんお散歩");
+        } else if (!this.fieldColors.has(color) && count >= this.phase) {
+            this.playMove(color, this.phase, "のんびりお散歩");
+        }
+    }
+
+    handleSpecial() {
+        if (this.turnIdx !== 0 || this.isGameOver) return;
+        this.playMove("Mix", 3, "今日からウチの子");
+    }
+}
+
+const game = new OsampoGame();
+</script>
+</body>
+</html>
